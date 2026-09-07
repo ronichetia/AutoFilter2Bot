@@ -28,7 +28,7 @@ def _str_list(val: str | None) -> list[str]:
 class Config:
     # Telegram
     BOT_TOKEN: str = os.environ.get("BOT_TOKEN", "")
-    API_ID: int = int(os.environ.get("API_ID", "0"))
+    API_ID: int = int(os.environ.get("API_ID") or "0")
     API_HASH: str = os.environ.get("API_HASH", "")
 
     # MongoDB
@@ -36,8 +36,8 @@ class Config:
     DATABASE_NAME: str = os.environ.get("DATABASE_NAME", "autofilterbot")
 
     # Admin / channels
-    ADMIN_IDS: list[int] = _int_list(os.environ.get("ADMIN_IDS"))
-    LOG_CHANNEL: int = int(os.environ.get("LOG_CHANNEL", "0"))
+    ADMIN_IDS: list[int] = _int_list(os.environ.get("ADMIN_IDS") or os.environ.get("ADMINS"))
+    LOG_CHANNEL: int = int(os.environ.get("LOG_CHANNEL") or "0")
     FILE_CHANNELS: list[int] = _int_list(os.environ.get("FILE_CHANNELS"))
     AUTH_CHANNEL: int | None = (
         int(os.environ["AUTH_CHANNEL"]) if os.environ.get("AUTH_CHANNEL") else None

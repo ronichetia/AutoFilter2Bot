@@ -4,7 +4,8 @@ col = db["filters"]
 
 
 async def add_filter(
-    chat_id: int, trigger: str, content: str, reply_markup: dict | None
+    chat_id: int, trigger: str, reply_text: str = "", reply_message_id: int | None = None,
+    content: str | None = None, reply_markup: dict | None = None,
 ) -> None:
     """Add or update a custom text filter for a chat."""
     await col.update_one(
@@ -13,6 +14,8 @@ async def add_filter(
             "$set": {
                 "chat_id": chat_id,
                 "trigger": trigger,
+                "reply_text": reply_text,
+                "reply_message_id": reply_message_id,
                 "content": content,
                 "reply_markup": reply_markup,
             }
@@ -32,9 +35,10 @@ async def get_all_filters(chat_id: int) -> list[dict]:
     return await cursor.to_list(length=None)
 
 
-async def delete_filter(chat_id: int, trigger: str) -> None:
-    """Delete a specific filter."""
-    await col.delete_one({"chat_id": chat_id, "trigger": trigger})
+async def delete_filter(chat_id: int, trigger: str) -> bool:
+    """Delete a specific filter. Returns True if something was deleted."""
+    result = await col.delete_one({"chat_id": chat_id, "trigger": trigger})
+    return result.deleted_count > 0
 
 
 async def delete_all_filters(chat_id: int) -> None:

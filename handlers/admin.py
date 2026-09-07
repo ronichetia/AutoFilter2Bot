@@ -108,7 +108,7 @@ async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     from database.users_db import get_all_users
 
-    cursor = get_all_users()
+    cursor = await get_all_users()
     user_ids_docs = await cursor.to_list(length=None)
     user_ids = [u["user_id"] for u in user_ids_docs]
     msg = update.message.reply_to_message
@@ -159,7 +159,7 @@ async def _send_users_page(message_or_query, context, page: int):
     from database.users_db import count_users, get_all_users
 
     total = await count_users()
-    cursor = get_all_users()
+    cursor = await get_all_users()
     all_users = await cursor.to_list(length=None)
     users = all_users[page * USERS_PER_PAGE : (page + 1) * USERS_PER_PAGE]
 
@@ -209,7 +209,7 @@ async def _send_chats_page(message_or_query, context, page: int):
     from database.chats_db import count_chats, get_all_chats
 
     total = await count_chats()
-    cursor = get_all_chats()
+    cursor = await get_all_chats()
     all_chats = await cursor.to_list(length=None)
     chats = all_chats[page * CHATS_PER_PAGE : (page + 1) * CHATS_PER_PAGE]
 

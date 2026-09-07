@@ -71,7 +71,7 @@ async def pm_search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if filter_values:
         filter_rows = _build_filter_buttons(filter_values, query)
-        all_buttons = filter_rows + kb.inline_keyboard
+        all_buttons = filter_rows + list(kb.inline_keyboard)
         kb = InlineKeyboardMarkup(all_buttons)
 
     await message.reply_text(

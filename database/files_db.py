@@ -1,8 +1,14 @@
 import re
+import hashlib
 import difflib
 from database.db_client import db
 
 col = db["files"]
+
+
+def _make_ref(file_id: str) -> str:
+    """Create a short (12-char) unique reference from a file_id for callback data."""
+    return hashlib.md5(file_id.encode()).hexdigest()[:12]
 
 
 async def save_file(
@@ -12,34 +18,69 @@ async def save_file(
     file_type: str,
     caption: str | None,
     chat_id: int,
+    message_id: int | None = None,
 ) -> None:
     """Insert or update a file document keyed by file_id."""
+    doc = {
+        "file_id": file_id,
+        "file_ref": _make_ref(file_id),
+        "file_name": file_name,
+        "file_size": file_size,
+        "file_type": file_type,
+        "caption": caption,
+        "chat_id": chat_id,
+    }
+    if message_id is not None:
+        doc["message_id"] = message_id
     await col.update_one(
         {"file_id": file_id},
-        {
-            "$set": {
-                "file_id": file_id,
-                "file_name": file_name,
-                "file_size": file_size,
-                "file_type": file_type,
-                "caption": caption,
-                "chat_id": chat_id,
-            }
-        },
+        {"$set": doc},
         upsert=True,
     )
 
 
-async def search_files(query: str, max_results: int = 10) -> list[dict]:
-    """Regex search on file_name (case-insensitive). Returns up to max_results."""
+async def search_files(
+    query: str,
+    max_results: int = 10,
+    page: int = 0,
+    per_page: int | None = None,
+    fuzzy: bool = False,
+) -> tuple[list[dict], int]:
+    """Search files by name, returning ``(results_page, total_count)``.
+
+    Exact regex search first; set *fuzzy=True* for SequenceMatcher fallback.
+    """
+    if per_page is not None:
+        limit = per_page
+    else:
+        limit = max_results
+
+    if fuzzy:
+        all_results = await fuzzy_search(query, max_results=0)  # 0 = no cap
+        total = len(all_results)
+        start = page * limit
+        return all_results[start : start + limit], total
+
     pattern = re.compile(re.escape(query), re.IGNORECASE)
-    cursor = col.find({"file_name": {"$regex": pattern}}).limit(max_results)
-    return await cursor.to_list(length=max_results)
+    total = await col.count_documents({"file_name": {"$regex": pattern}})
+    cursor = (
+        col.find({"file_name": {"$regex": pattern}})
+        .skip(page * limit)
+        .limit(limit)
+    )
+    results = await cursor.to_list(length=limit)
+    return results, total
 
 
 async def fuzzy_search(query: str, max_results: int = 10) -> list[dict]:
-    """Fetch all file names and rank them by SequenceMatcher ratio (≥0.4)."""
-    cursor = col.find({}, {"file_id": 1, "file_name": 1, "file_size": 1, "file_type": 1, "caption": 1, "chat_id": 1})
+    """Fetch all file names and rank by SequenceMatcher ratio (≥0.4)."""
+    cursor = col.find(
+        {},
+        {
+            "file_id": 1, "file_ref": 1, "file_name": 1,
+            "file_size": 1, "file_type": 1, "caption": 1, "chat_id": 1,
+        },
+    )
     results: list[tuple[float, dict]] = []
     async for doc in cursor:
         name = doc.get("file_name", "")
@@ -47,12 +88,18 @@ async def fuzzy_search(query: str, max_results: int = 10) -> list[dict]:
         if ratio >= 0.4:
             results.append((ratio, doc))
     results.sort(key=lambda x: x[0], reverse=True)
-    return [doc for _, doc in results[:max_results]]
+    if max_results:
+        return [doc for _, doc in results[:max_results]]
+    return [doc for _, doc in results]
 
 
-async def get_file(file_id: str) -> dict | None:
-    """Get a single file document by file_id."""
-    return await col.find_one({"file_id": file_id})
+async def get_file(file_ref: str) -> dict | None:
+    """Get a file document by file_ref (short hash) or file_id."""
+    # Try file_ref first (short callback key), then file_id (full key)
+    doc = await col.find_one({"file_ref": file_ref})
+    if doc:
+        return doc
+    return await col.find_one({"file_id": file_ref})
 
 
 async def delete_file(file_id: str) -> None:

@@ -11,7 +11,7 @@ from telegram.ext import (
 )
 
 from config import Config
-from database.files_db import search_files, get_file
+from database.files_db import search_files, _make_ref
 from database.connections_db import get_active_connection
 
 logger = logging.getLogger(__name__)
@@ -116,9 +116,9 @@ def _build_results_keyboard(
         # Truncate name for button text (max ~50 chars)
         display = name[:45] + "…" if len(name) > 45 else name
         btn_text = f"📄 {display} [{size}]"
-        # Callback data: file#<file_id_short> (keep under 64 bytes)
-        file_id = str(f.get("_id", f.get("file_id", "")))
-        cb_data = f"file#{file_id[:54]}"
+        # Use file_ref (short hash) for callback data — fits in 64 bytes
+        fref = f.get("file_ref") or _make_ref(f.get("file_id", ""))
+        cb_data = f"file_{fref}"
         buttons.append([InlineKeyboardButton(btn_text, callback_data=cb_data)])
 
     # Pagination row
@@ -219,7 +219,7 @@ async def group_search_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     # Prepend filter buttons if available
     if filter_values:
         filter_rows = _build_filter_buttons(filter_values, query)
-        all_buttons = filter_rows + kb.inline_keyboard
+        all_buttons = filter_rows + list(kb.inline_keyboard)
         kb = InlineKeyboardMarkup(all_buttons)
 
     await message.reply_text(
@@ -247,39 +247,7 @@ async def search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "noop":
         return
 
-    # --- File selection: file#<file_id> ---
-    if data.startswith("file#"):
-        file_id_key = data[5:]
-        user_id = update.effective_user.id
-
-        file_doc = await get_file(file_id_key)
-        if not file_doc:
-            await query.answer("❌ File not found!", show_alert=True)
-            return
-
-        actual_file_id = file_doc.get("file_id")
-        file_type = file_doc.get("file_type", "document")
-
-        try:
-            send_method = {
-                "video": context.bot.send_video,
-                "audio": context.bot.send_audio,
-            }.get(file_type, context.bot.send_document)
-
-            await send_method(
-                chat_id=user_id,
-                **{file_type if file_type in ("video", "audio") else "document": actual_file_id},
-                caption=f"📁 {file_doc.get('file_name', 'File')}",
-            )
-            await query.answer("✅ File sent to your PM!", show_alert=True)
-        except Exception as e:
-            logger.error(f"Failed to send file: {e}")
-            # User might not have started the bot
-            bot_username = (await context.bot.get_me()).username
-            await query.answer(
-                f"❌ Start me in PM first: @{bot_username}", show_alert=True
-            )
-        return
+    # --- File selection is handled by file_actions.py ---
 
     # --- Pagination: pg#<page>#<query> ---
     if data.startswith("pg#"):
@@ -374,9 +342,9 @@ def register(app):
         group=2,
     )
 
-    # Search callbacks (pagination, file selection, filters, close)
+    # Search callbacks (pagination, filters, close)
     app.add_handler(
         CallbackQueryHandler(
-            search_callback, pattern=r"^(file#|pg#|fl#|close|noop)"
+            search_callback, pattern=r"^(pg#|fl#|close|noop)"
         )
     )
