@@ -1,0 +1,7 @@
+name: auto-filter-bot
+type: web
+docker:
+  dockerfile: Dockerfile
+ports:
+  - port: 8080
+    protocol: http
